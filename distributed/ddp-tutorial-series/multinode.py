@@ -24,6 +24,7 @@ class Trainer:
         snapshot_path: str,
     ) -> None:
         self.local_rank = int(os.environ["LOCAL_RANK"])
+        # store unique rank identifier for each process
         self.global_rank = int(os.environ["RANK"])
         self.model = model.to(self.local_rank)
         self.train_data = train_data

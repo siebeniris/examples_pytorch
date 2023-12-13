@@ -10,7 +10,11 @@ from torch.distributed import init_process_group, destroy_process_group
 import os
 
 
+# failure occurs, torchrun restarts from checkpoint/snapshot
+# which epoch, optimizer state, learning rate scheduler
+
 def ddp_setup():
+    " don't need to set up for environment."
     init_process_group(backend="nccl")
     torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
 
@@ -21,13 +25,17 @@ class Trainer:
         train_data: DataLoader,
         optimizer: torch.optim.Optimizer,
         save_every: int,
-        snapshot_path: str,
+        snapshot_path: str, # how many epochshave run.
     ) -> None:
+        # torchrun provides environment variable LOCAL_RANK, which we can access
+        # we don't need to set up gpu_id.
         self.gpu_id = int(os.environ["LOCAL_RANK"])
         self.model = model.to(self.gpu_id)
         self.train_data = train_data
         self.optimizer = optimizer
+        # should we???
         self.save_every = save_every
+        # default case
         self.epochs_run = 0
         self.snapshot_path = snapshot_path
         if os.path.exists(snapshot_path):
@@ -37,7 +45,9 @@ class Trainer:
         self.model = DDP(self.model, device_ids=[self.gpu_id])
 
     def _load_snapshot(self, snapshot_path):
+        # snapshot is a dict
         loc = f"cuda:{self.gpu_id}"
+        # map location is a torch.device objector a string containing a device tag.
         snapshot = torch.load(snapshot_path, map_location=loc)
         self.model.load_state_dict(snapshot["MODEL_STATE"])
         self.epochs_run = snapshot["EPOCHS_RUN"]
@@ -53,6 +63,7 @@ class Trainer:
     def _run_epoch(self, epoch):
         b_sz = len(next(iter(self.train_data))[0])
         print(f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
+        # set the epoch
         self.train_data.sampler.set_epoch(epoch)
         for source, targets in self.train_data:
             source = source.to(self.gpu_id)
@@ -60,6 +71,7 @@ class Trainer:
             self._run_batch(source, targets)
 
     def _save_snapshot(self, epoch):
+        # checkpoint
         snapshot = {
             "MODEL_STATE": self.model.module.state_dict(),
             "EPOCHS_RUN": epoch,
